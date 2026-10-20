@@ -23,6 +23,25 @@ RUN pnpm install --frozen-lockfile
 COPY . .
 RUN pnpm generate
 
+# Salvaguarda contra o bug do Nuxt 4 / nitropack 2.13 (estrutura app/) em que os
+# publicAssets — o client build (_nuxt/) e a pasta public/ — às vezes NÃO são
+# copiados para .output/public, resultando em página sem CSS/JS (tudo 404).
+# Copiamos explicitamente o que estiver faltando. É idempotente: se o generate
+# já emitiu os arquivos, estas cópias apenas sobrescrevem com o mesmo conteúdo.
+RUN set -eux; \
+    mkdir -p .output/public; \
+    # Client build (contém a pasta _nuxt/ com CSS e JS com hash no nome)
+    if [ -d .nuxt/dist/client ]; then \
+      cp -R .nuxt/dist/client/. .output/public/; \
+    fi; \
+    # Arquivos públicos estáticos (favicon, imagens em img/, etc.)
+    if [ -d public ]; then \
+      cp -R public/. .output/public/; \
+    fi; \
+    # Falha cedo se o CSS/JS do _nuxt não existir — evita publicar sem estilo
+    test -d .output/public/_nuxt; \
+    ls -la .output/public/_nuxt | head -n 20
+
 # ---------- Estágio 2: imagem final com Nginx ----------
 FROM nginx:1.27-alpine AS runner
 
